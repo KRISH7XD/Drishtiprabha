@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import RPi.GPIO as GPIO
+from gpiozero import DigitalOutputDevice, DigitalInputDevice
 import time
 import torch
 from torchvision import transforms
@@ -9,20 +9,18 @@ import math
 
 class SensorManager:
     def __init__(self, trig_pin, echo_pin, vibration_pin, extra_sensors=None):
-        # Initialize GPIO
-        GPIO.setmode(GPIO.BCM)
+        # Initialize GPIO with gpiozero
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
         self.vibration_pin = vibration_pin
-        GPIO.setup(trig_pin, GPIO.OUT)
-        GPIO.setup(echo_pin, GPIO.IN)
-        GPIO.setup(vibration_pin, GPIO.OUT)
+        self.trig = DigitalOutputDevice(trig_pin)
+        self.echo = DigitalInputDevice(echo_pin)
+        self.vibration = DigitalOutputDevice(vibration_pin)
 
         # Initialize extra ultrasonic sensors (if provided)
         self.extra_sensors = extra_sensors or []
-        for trig, echo in self.extra_sensors:
-            GPIO.setup(trig, GPIO.OUT)
-            GPIO.setup(echo, GPIO.IN)
+        self.extra_trig_echo = [(DigitalOutputDevice(trig), DigitalInputDevice(echo)) 
+                               for trig, echo in self.extra_sensors]
 
         # Initialize MiDaS
         self.midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small")
@@ -36,44 +34,33 @@ class SensorManager:
         ])
 
         # Initialize MPU-6050
-        self.bus = smbus.SMBus(1)  # I2C bus 1
-        self.mpu_address = 0x68  # MPU-6050 default address
+        self.bus = smbus.SMBus(1)
+        self.mpu_address = 0x68
         self._init_mpu6050()
 
     def _init_mpu6050(self):
-        """Initialize MPU-6050 IMU."""
         try:
-            # Wake up MPU-6050 (disable sleep mode)
             self.bus.write_byte_data(self.mpu_address, 0x6B, 0x00)
         except Exception as e:
             print(f"Failed to initialize MPU-6050: {e}")
             self.mpu_address = None
 
     def get_imu_orientation(self):
-        """Get yaw angle from MPU-6050 (approximate)."""
         if not self.mpu_address:
-            return 0.0  # Default to 0 if IMU not available
-
+            return 0.0
         try:
-            # Read accelerometer and gyro data
             accel_x = self._read_word_2c(0x3B) / 16384.0
             accel_y = self._read_word_2c(0x3D) / 16384.0
             accel_z = self._read_word_2c(0x3F) / 16384.0
-
-            # Calculate pitch and roll
             pitch = math.atan2(accel_y, math.sqrt(accel_x**2 + accel_z**2)) * 180 / math.pi
             roll = math.atan2(-accel_x, accel_z) * 180 / math.pi
-
-            # Approximate yaw (simplified, requires magnetometer for accuracy)
             gyro_z = self._read_word_2c(0x47) / 131.0
-            yaw = gyro_z  # Placeholder; integrate over time for better yaw
-
-            return yaw  # In degrees
+            yaw = gyro_z
+            return yaw
         except:
             return 0.0
 
     def _read_word_2c(self, reg):
-        """Read 2 bytes from MPU-6050 and convert to signed integer."""
         high = self.bus.read_byte_data(self.mpu_address, reg)
         low = self.bus.read_byte_data(self.mpu_address, reg + 1)
         value = (high << 8) + low
@@ -83,47 +70,58 @@ class SensorManager:
 
     def get_ultrasonic_distance(self):
         """Measure distance using HC-SR04 (returns meters)."""
-        GPIO.output(self.trig_pin, True)
+        timeout = 0.05
+        self.trig.on()
         time.sleep(0.00001)
-        GPIO.output(self.trig_pin, False)
+        self.trig.off()
         start_time = time.time()
         stop_time = time.time()
         
-        while GPIO.input(self.echo_pin) == 0:
+        while not self.echo.is_active:
             start_time = time.time()
-        while GPIO.input(self.echo_pin) == 1:
+            if start_time - stop_time > timeout:
+                return None
+        while self.echo.is_active:
             stop_time = time.time()
+            if stop_time - start_time > timeout:
+                return None
         
         elapsed_time = stop_time - start_time
-        distance_inches = (elapsed_time * 34300) / 2 / 2.54  # Your code
-        distance_meters = distance_inches * 0.0254  # Convert to meters
+        distance_inches = (elapsed_time * 34300) / 2 / 2.54
+        distance_meters = distance_inches * 0.0254
         if 0.05 < distance_meters < 4.0:
             return distance_meters
         return None
 
     def get_extra_sensor_distances(self):
-        """Measure distances from extra ultrasonic sensors (returns list of meters)."""
         distances = []
-        for trig, echo in self.extra_sensors:
-            GPIO.output(trig, True)
+        timeout = 0.05
+        for trig, echo in self.extra_trig_echo:
+            trig.on()
             time.sleep(0.00001)
-            GPIO.output(trig, False)
+            trig.off()
             start_time = time.time()
             stop_time = time.time()
             
-            while GPIO.input(echo) == 0:
+            while not echo.is_active:
                 start_time = time.time()
-            while GPIO.input(echo) == 1:
-                stop_time = time.time()
-            
-            elapsed_time = stop_time - start_time
-            distance_inches = (elapsed_time * 34300) / 2 / 2.54
-            distance_meters = distance_inches * 0.0254
-            distances.append(distance_meters if 0.05 < distance_meters < 4.0 else None)
+                if start_time - stop_time > timeout:
+                    distances.append(None)
+                    break
+            else:
+                while echo.is_active:
+                    stop_time = time.time()
+                    if stop_time - start_time > timeout:
+                        distances.append(None)
+                        break
+                else:
+                    elapsed_time = stop_time - start_time
+                    distance_inches = (elapsed_time * 34300) / 2 / 2.54
+                    distance_meters = distance_inches * 0.0254
+                    distances.append(distance_meters if 0.05 < distance_meters < 4.0 else None)
         return distances
 
     def get_depth_map(self, frame):
-        """Estimate depth using MiDaS."""
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = self.transform(img).unsqueeze(0).to(self.device)
         
@@ -138,24 +136,25 @@ class SensorManager:
         return depth
 
     def estimate_depth(self, depth_map, center_x, frame_shape):
-        """Estimate depth at object's position (returns meters)."""
         region_y = int(frame_shape[0] * 0.3)
         region_x = int(center_x * frame_shape[1])
         depth_value = depth_map[region_y, region_x]
-        return 1 / (depth_value + 0.1) * 5  # Rough scaling
+        return 1 / (depth_value + 0.1) * 5
 
     def is_low_light(self, frame):
-        """Detect low-light conditions."""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         avg_brightness = np.mean(gray)
         return avg_brightness < 30
 
     def activate_vibration(self, duration=0.5):
-        """Activate vibration motor."""
-        GPIO.output(self.vibration_pin, True)
+        self.vibration.on()
         time.sleep(duration)
-        GPIO.output(self.vibration_pin, False)
+        self.vibration.off()
 
     def cleanup(self):
-        """Cleanup GPIO."""
-        GPIO.cleanup()
+        self.trig.close()
+        self.echo.close()
+        self.vibration.close()
+        for trig, echo in self.extra_trig_echo:
+            trig.close()
+            echo.close()

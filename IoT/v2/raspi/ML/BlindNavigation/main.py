@@ -5,7 +5,6 @@ from object_detection import ObjectDetector
 from sensor import SensorManager
 from path_planning import PathPlanner
 from feedback import FeedbackManager
-from voice_input import VoiceInput
 import yaml
 import math
 

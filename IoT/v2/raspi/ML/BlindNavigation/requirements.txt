@@ -6,3 +6,5 @@ opencv-python
 pyttsx3
 RPi.GPIO
 pyyaml
+speech_recognition
+smbus2

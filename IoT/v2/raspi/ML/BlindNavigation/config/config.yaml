@@ -4,6 +4,8 @@ sensor:
   trig_pin: 23
   echo_pin: 24
   vibration_pin: 18
+  extra_sensors:
+    - [17, 27]  # Example: Left sensor (TRIG: 17, ECHO: 27)
 path_planning:
   grid_size: [10, 10]
   grid_resolution: 1.0

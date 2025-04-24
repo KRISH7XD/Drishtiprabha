@@ -56,8 +56,8 @@ class PathPlanner:
 
         return []
 
-    def get_navigation_instruction(self, path, current_pos):
-        """Generate navigation instruction."""
+    def get_navigation_instruction(self, path, current_pos, yaw=0):
+        """Generate navigation instruction based on path and user orientation."""
         if not path:
             return "No clear path to target. Stop and wait."
         
@@ -65,12 +65,22 @@ class PathPlanner:
         dx = next_pos[0] - current_pos[0]
         dy = next_pos[1] - current_pos[1]
 
+        # Calculate required heading
+        target_angle = math.degrees(math.atan2(dy, dx))
+        relative_angle = (target_angle - yaw) % 360
+        if relative_angle > 180:
+            relative_angle -= 360
+
+        if abs(relative_angle) > 15:
+            direction = "right" if relative_angle > 0 else "left"
+            return f"Turn {direction} {int(abs(relative_angle))} degrees."
+        
         if dx > 0:
             return "Move forward 1 meter."
         elif dx < 0:
             return "Move backward 1 meter."
         elif dy > 0:
-            return "Turn right 90 degrees and move forward 1 meter."
+            return "Move right 1 meter."
         elif dy < 0:
-            return "Turn left 90 degrees and move forward 1 meter."
+            return "Move left 1 meter."
         return "Continue forward."

@@ -1,0 +1,14 @@
+model:
+  yolo_weights: "yolov8n.pt"
+sensor:
+  trig_pin: 23
+  echo_pin: 24
+  vibration_pin: 18
+path_planning:
+  grid_size: [10, 10]
+  grid_resolution: 1.0
+  target_pos: [5, 0]
+feedback:
+  speech_rate: 150
+  min_speech_interval: 2.0
+  min_vibration_interval: 1.0

@@ -1,0 +1,8 @@
+ultralytics
+torch
+torchvision
+numpy
+opencv-python
+pyttsx3
+RPi.GPIO
+pyyaml

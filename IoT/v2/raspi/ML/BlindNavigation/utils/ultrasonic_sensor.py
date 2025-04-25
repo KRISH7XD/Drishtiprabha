@@ -1,24 +1,27 @@
+import lgpio
 import time
-import RPi.GPIO as GPIO
 
+h = lgpio.gpiochip_open(0)
 TRIG = 23
 ECHO = 24
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(TRIG, GPIO.OUT)
-GPIO.setup(ECHO, GPIO.IN)
+lgpio.gpio_claim_output(h, TRIG)
+lgpio.gpio_claim_input(h, ECHO)
 
 def get_distance():
-    GPIO.output(TRIG, True)
+    lgpio.gpio_write(h, TRIG, 1)
     time.sleep(0.00001)
-    GPIO.output(TRIG, False)
+    lgpio.gpio_write(h, TRIG, 0)
+
     start_time = time.time()
     stop_time = time.time()
-    
-    while GPIO.input(ECHO) == 0:
+
+    while lgpio.gpio_read(h, ECHO) == 0:
         start_time = time.time()
-    while GPIO.input(ECHO) == 1:
+
+    while lgpio.gpio_read(h, ECHO) == 1:
         stop_time = time.time()
-    
-    elapsed_time = stop_time - start_time
-    return (elapsed_time * 34300) / 2 / 2.54
+
+    time_elapsed = stop_time - start_time
+    distance = (time_elapsed * 34300) / 2
+    return distance

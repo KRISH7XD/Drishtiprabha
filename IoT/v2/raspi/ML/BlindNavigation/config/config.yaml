@@ -1,12 +1,12 @@
 model:
   yolo_weights: "yolov8n.pt"
 sensor:
-  trig_pin: 23
-  echo_pin: 24
+  trig_pin: 15
+  echo_pin: 16
   vibration_pin: 18
   i2c_bus: 1
   extra_sensors:
-    - [17, 27]  # Example: left sensor
+    - [11, 12]  # Example: left sensor (BOARD pins)
 path_planning:
   grid_size: [10, 10]
   grid_resolution: 1.0

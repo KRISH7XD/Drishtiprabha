@@ -2,27 +2,17 @@ import time
 import threading
 import queue
 import os
-import sys
-import RPi.GPIO as GPIO
 from utils.ultrasonic_sensor import get_distance
-from utils.camera import Camera  # Import the Camera class
+from utils.camera import Camera  
 from ultralytics import YOLO
-
-# GPIO setup for HC-SR04 (ultrasonic sensor)
-TRIG = 23  # GPIO pin 23
-ECHO = 24  # GPIO pin 24
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(TRIG, GPIO.OUT)
-GPIO.setup(ECHO, GPIO.IN)
 
 # Initialize TTS queue
 tts_queue = queue.Queue()
 
 # Load YOLOv8n model
-model = YOLO('yolov8n.pt')  # Ensure this path is correct
+model = YOLO('yolov8n.pt')  # Ensure the path is correct
 
-# Initialize camera (use the new Camera class)
+# Initialize camera using custom Camera class
 camera = Camera(resolution=(320, 240))
 
 # Function to speak text using eSpeak
@@ -42,10 +32,6 @@ def tts_worker():
 tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()
 
-# Function to measure distance using the ultrasonic sensor
-def measure_distance():
-    return get_distance()  # Use the imported get_distance function
-
 try:
     while True:
         # Capture image from the camera
@@ -58,8 +44,8 @@ try:
         detections = results[0].boxes
         labels = results[0].names
 
-        # Measure distance using ultrasonic sensor
-        distance = measure_distance()
+        # Measure distance using the ultrasonic sensor
+        distance = get_distance()  # Clean: only use this from utils
 
         # Process detections
         for box in detections:
@@ -78,9 +64,9 @@ try:
 
             # Generate message based on distance
             if distance < 50:
-                message = f"Warning: {label} ahead at {distance} centimeters on your {position}."
+                message = f"Warning: {label} ahead at {distance:.1f} centimeters on your {position}."
             elif distance < 150:
-                message = f"{label} detected {distance} centimeters ahead on your {position}."
+                message = f"{label} detected {distance:.1f} centimeters ahead on your {position}."
             else:
                 message = f"Path is clear on your {position}."
 
@@ -88,13 +74,12 @@ try:
             if tts_queue.empty():
                 tts_queue.put(message)
 
-        time.sleep(0.1)  # Adjust for desired responsiveness
+        time.sleep(0.1)
 
 except KeyboardInterrupt:
     print("Interrupted by user.")
 
 finally:
-    camera.release_camera()  # Release camera when done
-    GPIO.cleanup()
+    camera.release_camera()
     tts_queue.put(None)
     tts_thread.join()

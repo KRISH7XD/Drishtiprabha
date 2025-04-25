@@ -3,46 +3,20 @@ import time
 import threading
 import queue
 import os
-import RPi.GPIO as GPIO
+import sys
+
+# Path for custom utils
+sys.path.append(os.path.join(os.path.dirname(__file__), '../utils'))
+
+# Import the shared ultrasonic function
+from utils.ultrasonic_sensor import get_distance
 from ultralytics import YOLO
-
-# GPIO setup for HC-SR04
-TRIG = 23  # GPIO pin 23
-ECHO = 24  # GPIO pin 24
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(TRIG, GPIO.OUT)
-GPIO.setup(ECHO, GPIO.IN)
 
 # Initialize TTS queue
 tts_queue = queue.Queue()
 
-# Load YOLOv8n model
-model = YOLO('yolov8n.pt')  # Ensure this path is correct
-
-# Function to measure distance using HC-SR04
-def measure_distance():
-    GPIO.output(TRIG, False)
-    time.sleep(0.05)
-
-    GPIO.output(TRIG, True)
-    time.sleep(0.00001)
-    GPIO.output(TRIG, False)
-
-    pulse_start = time.time()
-    timeout = pulse_start + 0.04
-    while GPIO.input(ECHO) == 0 and pulse_start < timeout:
-        pulse_start = time.time()
-
-    pulse_end = time.time()
-    timeout = pulse_end + 0.04
-    while GPIO.input(ECHO) == 1 and pulse_end < timeout:
-        pulse_end = time.time()
-
-    pulse_duration = pulse_end - pulse_start
-    distance = pulse_duration * 17150  # Speed of sound: 34300 cm/s
-    distance = round(distance, 2)
-    return distance
+# Load YOLOv8n model (make sure the file is in the correct path)
+model = YOLO('yolov8n.pt')
 
 # Function to speak text using eSpeak
 def speak(text):
@@ -62,7 +36,7 @@ tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()
 
 # Initialize camera
-cap = cv2.VideoCapture(0)  # Adjust if necessary
+cap = cv2.VideoCapture(0)  # Adjust index if needed
 
 try:
     while True:
@@ -70,13 +44,13 @@ try:
         if not ret:
             continue
 
-        # Perform object detection
+        # Run object detection
         results = model(frame)
         detections = results[0].boxes
         labels = results[0].names
 
-        # Measure distance
-        distance = measure_distance()
+        # Get distance from ultrasonic sensor
+        distance = get_distance()
 
         # Process detections
         for box in detections:
@@ -84,7 +58,6 @@ try:
             label = labels[cls_id]
             x_center = (box.xyxy[0][0] + box.xyxy[0][2]) / 2
 
-            # Determine position
             frame_width = frame.shape[1]
             if x_center < frame_width / 3:
                 position = "left"
@@ -93,25 +66,24 @@ try:
             else:
                 position = "center"
 
-            # Generate message based on distance
+            # Generate audio message based on proximity
             if distance < 50:
-                message = f"Warning: {label} ahead at {distance} centimeters on your {position}."
+                message = f"Warning: {label} ahead at {int(distance)} centimeters on your {position}."
             elif distance < 150:
-                message = f"{label} detected {distance} centimeters ahead on your {position}."
+                message = f"{label} detected {int(distance)} centimeters ahead on your {position}."
             else:
                 message = f"Path is clear on your {position}."
 
-            # Add message to TTS queue
+            # Avoid message overlap
             if tts_queue.empty():
                 tts_queue.put(message)
 
-        time.sleep(0.1)  # Adjust for desired responsiveness
+        time.sleep(0.1)  # Slight delay for responsiveness
 
 except KeyboardInterrupt:
     print("Interrupted by user.")
 
 finally:
     cap.release()
-    GPIO.cleanup()
     tts_queue.put(None)
     tts_thread.join()

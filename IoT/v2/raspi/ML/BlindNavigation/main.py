@@ -20,7 +20,8 @@ async def main():
         trig_pin=config["sensor"]["trig_pin"],
         echo_pin=config["sensor"]["echo_pin"],
         vibration_pin=config["sensor"]["vibration_pin"],
-        extra_sensors=config["sensor"].get("extra_sensors", [])
+        extra_sensors=config["sensor"].get("extra_sensors", []),
+        i2c_bus=config["sensor"].get("i2c_bus", 1)
     )
     planner = PathPlanner(
         grid_size=config["path_planning"]["grid_size"],
@@ -39,11 +40,11 @@ async def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    user_pos = [0, 0]  # Starting position
+    user_pos = [0, 0]
     last_speech_time = 0
     last_vibration_time = 0
     last_voice_check = 0
-    voice_check_interval = 10.0  # Check for voice commands every 10 seconds
+    voice_check_interval = 10.0
 
     try:
         while True:
@@ -57,12 +58,14 @@ async def main():
             if (current_time - last_voice_check) > voice_check_interval:
                 command = voice.get_command()
                 if command and "exit" in command:
-                    planner.target_pos = [5, 0]  # Example: set target to room exit
+                    planner.target_pos = [5, 0]
                     feedback.add_to_tts_queue("Navigating to room exit.", priority=True)
                 last_voice_check = current_time
 
             # Get user orientation from IMU
             yaw = sensor.get_imu_orientation()
+            if yaw == 0.0 and sensor.mpu_address is None:
+                feedback.add_to_tts_queue("IMU not available. Navigation may be less accurate.", priority=True)
 
             # Check for low-light conditions
             if sensor.is_low_light(frame):
@@ -91,8 +94,7 @@ async def main():
             for label, center_x in detected_objects:
                 if depth_map is not None:
                     depth_meters = sensor.estimate_depth(depth_map, center_x, frame.shape)
-                    # Adjust object position based on yaw
-                    relative_angle = (center_x - 0.5) * 60 + yaw  # Assume 60° FOV
+                    relative_angle = (center_x - 0.5) * 60 + yaw
                     if depth_meters < closest_distance:
                         closest_distance = depth_meters
                         closest_object = label
@@ -104,7 +106,7 @@ async def main():
             ultrasonic_dist = sensor.get_ultrasonic_distance()
             if ultrasonic_dist and closest_distance > ultrasonic_dist:
                 closest_distance = ultrasonic_dist
-                closest_angle = yaw  # Assume forward-facing sensor
+                closest_angle = yaw
 
             # Check extra sensors
             extra_distances = sensor.get_extra_sensor_distances()
@@ -143,14 +145,13 @@ async def main():
                 user_pos = list(path[0])
 
             # Control frame rate
-            await asyncio.sleep(0.1)  # ~10 FPS
+            await asyncio.sleep(0.1)
 
             # Exit on key press (for testing)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
     finally:
-        # Cleanup
         cap.release()
         cv2.destroyAllWindows()
         sensor.cleanup()

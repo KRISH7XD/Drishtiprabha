@@ -1,43 +1,31 @@
 import pyttsx3
-from queue import Queue
 import threading
+import queue
+import time
 
 class FeedbackManager:
-    def __init__(self, speech_rate, min_speech_interval, min_vibration_interval):
+    def __init__(self, speech_rate=150, min_speech_interval=2.0, min_vibration_interval=1.0):
         self.engine = pyttsx3.init()
         self.engine.setProperty('rate', speech_rate)
-        self.tts_queue = Queue()
-        self.tts_lock = threading.Lock()
+        self.tts_queue = queue.PriorityQueue()
         self.min_speech_interval = min_speech_interval
         self.min_vibration_interval = min_vibration_interval
-
-        # Start TTS worker thread
-        self.tts_thread = threading.Thread(target=self.tts_worker, daemon=True)
-        self.tts_thread.start()
-
-    def tts_worker(self):
-        """Process TTS queue."""
-        while True:
-            message = self.tts_queue.get()
-            if message is None:
-                break
-            with self.tts_lock:
-                self.engine.say(message)
-                self.engine.runAndWait()
-            self.tts_queue.task_done()
+        self.last_speech_time = 0
+        self.speech_thread = threading.Thread(target=self._speech_worker, daemon=True)
+        self.speech_thread.start()
 
     def add_to_tts_queue(self, message, priority=False):
-        """Add message to TTS queue."""
-        if priority:
-            while not self.tts_queue.empty():
-                try:
-                    self.tts_queue.get_nowait()
-                    self.tts_queue.task_done()
-                except:
-                    pass
-        self.tts_queue.put(message)
+        self.tts_queue.put((0 if priority else 1, message))
+
+    def _speech_worker(self):
+        while True:
+            _, message = self.tts_queue.get()
+            current_time = time.time()
+            if (current_time - self.last_speech_time) > self.min_speech_interval:
+                self.engine.say(message)
+                self.engine.runAndWait()
+                self.last_speech_time = current_time
+            self.tts_queue.task_done()
 
     def cleanup(self):
-        """Cleanup TTS."""
-        self.tts_queue.put(None)
-        self.tts_thread.join()
+        self.engine.stop()

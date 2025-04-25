@@ -1,5 +1,4 @@
 import numpy as np
-from heapq import heappop, heappush
 import math
 
 class PathPlanner:
@@ -7,81 +6,44 @@ class PathPlanner:
         self.grid_size = grid_size
         self.grid_resolution = grid_resolution
         self.target_pos = target_pos
-        self.occupancy_grid = np.zeros(grid_size, dtype=np.float32)
+        self.grid = np.zeros(grid_size)
 
     def update_occupancy_grid(self, objects, depth_map, frame_shape):
-        """Update occupancy grid with detected objects."""
-        self.occupancy_grid.fill(0)
+        self.grid = np.zeros(self.grid_size)
+        for label, center_x, depth in objects:
+            if depth < 5.0:
+                grid_x = int(self.target_pos[0] / self.grid_resolution)
+                grid_y = int((center_x - 0.5) * 5 / self.grid_resolution + self.grid_size[1] // 2)
+                if 0 <= grid_x < self.grid_size[0] and 0 <= grid_y < self.grid_size[1]:
+                    self.grid[grid_x, grid_y] = 1
 
-        for label, center_x, depth_meters in objects:
-            grid_x = int(depth_meters / self.grid_resolution)
-            grid_y = int((center_x - 0.5) * 4)
-            grid_x = min(max(grid_x, 0), self.grid_size[0] - 1)
-            grid_y = min(max(grid_y + self.grid_size[1] // 2, 0), self.grid_size[1] - 1)
-            self.occupancy_grid[grid_x, grid_y] = 1.0
+    def plan_path(self, user_pos):
+        # Simplified A* path planning
+        path = [user_pos]
+        current_pos = user_pos
+        while np.linalg.norm(np.array(current_pos) - np.array(self.target_pos)) > self.grid_resolution:
+            next_pos = [
+                current_pos[0] + self.grid_resolution * np.sign(self.target_pos[0] - current_pos[0]),
+                current_pos[1] + self.grid_resolution * np.sign(self.target_pos[1] - current_pos[1])
+            ]
+            grid_x = int(next_pos[0] / self.grid_resolution)
+            grid_y = int(next_pos[1] / self.grid_resolution + self.grid_size[1] // 2)
+            if 0 <= grid_x < self.grid_size[0] and 0 <= grid_y < self.grid_size[1] and self.grid[grid_x, grid_y] == 0:
+                path.append(next_pos)
+                current_pos = next_pos
+            else:
+                break
+        return path
 
-    def plan_path(self, start_pos):
-        """Plan path using A*."""
-        def heuristic(a, b):
-            return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
-        start = (int(start_pos[0]), int(start_pos[1]))
-        goal = (int(self.target_pos[0]), int(self.target_pos[1]))
-
-        open_set = [(0, start)]
-        came_from = {}
-        g_score = {start: 0}
-        f_score = {start: heuristic(start, goal)}
-
-        while open_set:
-            current_f, current = heappop(open_set)
-
-            if current == goal:
-                path = []
-                while current in came_from:
-                    path.append(current)
-                    current = came_from[current]
-                return path[::-1]
-
-            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                neighbor = (current[0] + dx, current[1] + dy)
-                if 0 <= neighbor[0] < self.grid_size[0] and 0 <= neighbor[1] < self.grid_size[1]:
-                    if self.occupancy_grid[neighbor[0], neighbor[1]] > 0.5:
-                        continue
-                    tentative_g = g_score[current] + 1
-                    if tentative_g < g_score.get(neighbor, float('inf')):
-                        came_from[neighbor] = current
-                        g_score[neighbor] = tentative_g
-                        f_score[neighbor] = tentative_g + heuristic(neighbor, goal)
-                        heappush(open_set, (f_score[neighbor], neighbor))
-
-        return []
-
-    def get_navigation_instruction(self, path, current_pos, yaw=0):
-        """Generate navigation instruction based on path and user orientation."""
-        if not path:
-            return "No clear path to target. Stop and wait."
-        
-        next_pos = path[0]
-        dx = next_pos[0] - current_pos[0]
-        dy = next_pos[1] - current_pos[1]
-
-        # Calculate required heading
-        target_angle = math.degrees(math.atan2(dy, dx))
-        relative_angle = (target_angle - yaw) % 360
-        if relative_angle > 180:
-            relative_angle -= 360
-
-        if abs(relative_angle) > 15:
-            direction = "right" if relative_angle > 0 else "left"
-            return f"Turn {direction} {int(abs(relative_angle))} degrees."
-        
-        if dx > 0:
-            return "Move forward 1 meter."
-        elif dx < 0:
-            return "Move backward 1 meter."
-        elif dy > 0:
-            return "Move right 1 meter."
-        elif dy < 0:
-            return "Move left 1 meter."
-        return "Continue forward."
+    def get_navigation_instruction(self, path, user_pos, yaw):
+        if not path or len(path) < 2:
+            return "No clear path. Stop."
+        next_pos = path[1]
+        dx = next_pos[0] - user_pos[0]
+        dy = next_pos[1] - user_pos[1]
+        angle = math.atan2(dy, dx) * 180 / math.pi - yaw
+        angle = (angle + 180) % 360 - 180
+        distance = np.linalg.norm(np.array(next_pos) - np.array(user_pos))
+        if abs(angle) > 15:
+            return f"Turn {'left' if angle > 0 else 'right'} {int(abs(angle))} degrees."
+        return f"Move forward {distance:.1f} meters."

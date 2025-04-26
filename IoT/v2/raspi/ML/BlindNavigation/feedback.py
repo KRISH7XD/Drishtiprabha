@@ -1,11 +1,13 @@
-import pyttsx3
 from queue import Queue
 import threading
+from TTS.api import TTS
+import os
 
 class FeedbackManager:
     def __init__(self, speech_rate, min_speech_interval, min_vibration_interval):
-        self.engine = pyttsx3.init()
-        self.engine.setProperty('rate', speech_rate)
+        # Initialize Coqui TTS
+        self.tts_model = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC", progress_bar=False, gpu=False)
+        self.speech_rate = speech_rate
         self.tts_queue = Queue()
         self.tts_lock = threading.Lock()
         self.min_speech_interval = min_speech_interval
@@ -22,8 +24,13 @@ class FeedbackManager:
             if message is None:
                 break
             with self.tts_lock:
-                self.engine.say(message)
-                self.engine.runAndWait()
+                # Generate and save audio file
+                self.tts_model.tts_to_file(
+                    text=message,
+                    file_path="output.wav"
+                )
+                # Play the audio
+                os.system("aplay output.wav")
             self.tts_queue.task_done()
 
     def add_to_tts_queue(self, message, priority=False):

@@ -1,20 +1,20 @@
 from ultralytics import YOLO
-import cv2
 
 class ObjectDetector:
-    def __init__(self, model_path="yolov8n.pt"):
-        self.model = YOLO(model_path)
+    def __init__(self, weights_path="yolov8n.pt"):
+        self.model = YOLO(weights_path)
 
     def detect(self, frame):
+        """Detect objects in the frame and return (label, center_x) pairs."""
         results = self.model(frame, verbose=False)
         detected_objects = []
-        
-        for r in results:
-            boxes = r.boxes
-            for box in boxes:
-                cls = int(box.cls[0])
-                label = self.model.names[cls]
-                x_center = (box.xyxy[0][0] + box.xyxy[0][2]) / 2 / frame.shape[1]
-                detected_objects.append((label, x_center))
-        
+
+        for box in results[0].boxes:
+            label = self.model.names[int(box.cls)]
+            confidence = box.conf.item()
+            if confidence > 0.5:  # Confidence threshold
+                x, y, w, h = box.xywh[0].tolist()
+                center_x = x / frame.shape[1]  # Normalized x position
+                detected_objects.append((label, center_x))
+
         return detected_objects

@@ -6,7 +6,7 @@ sensor:
   vibration_pin: 18
   i2c_bus: 1
   extra_sensors:
-    - [11, 12]  # Example: left sensor (BOARD pins)
+    - [11, 12]  # Example: left sensor
 path_planning:
   grid_size: [10, 10]
   grid_resolution: 1.0

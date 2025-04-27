@@ -1,3 +1,4 @@
 #!/bin/bash
-source .mlenv/bin/activate
-python3 main2.py
+source mlVenv/bin/activate
+git pull origin main
+python3 main.py

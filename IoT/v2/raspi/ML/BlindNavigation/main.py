@@ -5,6 +5,7 @@ from object_detection import ObjectDetector
 from sensor import SensorManager
 from path_planning import PathPlanner
 from feedback import FeedbackManager
+from utils.camera import Camera   # <-- Import your new Camera class
 import yaml
 
 async def main():
@@ -29,11 +30,7 @@ async def main():
         min_speech_interval=config["feedback"]["min_speech_interval"],
         min_vibration_interval=config["feedback"]["min_vibration_interval"]
     )
-
-    # Initialize camera
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    camera = Camera(resolution=(640, 480))  # <-- Initialize your Camera object
 
     user_pos = [0, 0]  # Starting position
     last_speech_time = 0
@@ -41,8 +38,8 @@ async def main():
 
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
+            frame = camera.capture_image()  # <-- Capture image using new Camera class
+            if frame is None:
                 print("Failed to capture frame")
                 break
 
@@ -112,13 +109,9 @@ async def main():
             # Control frame rate
             await asyncio.sleep(0.1)  # ~10 FPS
 
-            # Exit on key press (for testing)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
     finally:
         # Cleanup
-        cap.release()
+        camera.release_camera()    # <-- Release your Camera properly
         cv2.destroyAllWindows()
         sensor.cleanup()
         feedback.cleanup()
